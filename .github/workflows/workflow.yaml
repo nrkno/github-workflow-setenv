@@ -1,0 +1,177 @@
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: "Runs on, e.g. ubuntu-latest"
+        required: true
+        type: string
+      github-role-name:
+        description: "The Vault role name for the github-app-role"
+        required: true
+        type: string
+      role-name:
+        description: "Vault app_role_applications name"
+        required: true
+        type: string
+      vault-address:
+        description: "Vault address, e.g. https://vault.some-domain.com"
+        required: true
+        type: string
+      env:
+        description: "Vault environment eg: prod"
+        required: true
+        type: string
+      cluster:
+        description: "Can be used multiple times, exported in KUBE_CONFIG_PATH: ~/.kube/atlantis/config"
+        required: false
+        type: string
+        default: None
+      azure:
+        description: "Get Azure credentials, exported as ARM_CLIENT_ID and ARM_CLIENT_SECRET"
+        required: false
+        type: boolean
+        default: false
+      azure-no-arm:
+        description: "Do not export ARM_CLIENT_ID and ARM_CLIENT_SECRET, only TF_VAR_azure_client_id and TF_VAR_azure_client_secret"
+        required: false
+        type: boolean
+        default: false
+      gcp:
+        description: 'GCP project names, creates TF_VAR_gcp_project_name for use in "credentials" in google provider'
+        required: false
+        type: string
+        default: None
+      terraform-registry:
+        description: 'Get Terraform registry token, expects to be found in vault under "token" in secret/applications/{name}/{env}/terraform-registry'
+        required: false
+        type: boolean
+        default: false
+      no-wait:
+        description: "Do not wait for credentials to propagate"
+        required: false
+        type: boolean
+        default: false
+      eval:
+        description: "Output as export statements, for use with eval $()"
+        required: false
+        type: boolean
+        default: false
+      new-line:
+        description: "Output as text separated by newline"
+        required: false
+        type: boolean
+        default: false
+      debug:
+        description: "Print progress messages"
+        required: false
+        type: boolean
+        default: false
+      vault-role-id-name:
+        description: 'Name of the environment variable for Vault role ID, defaults to "TF_VAR_vault_role_id"'
+        required: false
+        type: string
+        default: "TF_VAR_vault_role_id"
+      vault-secret-id-name:
+        description: 'Name of the environment variable for Vault secret ID, defaults to "TF_VAR_vault_secret_id"'
+        required: false
+        type: string
+        default: "TF_VAR_vault_secret_id"
+      vault-secret-id-cidr:
+        description: "CIDR to use for Vault secret ID, defaults to the IP address from --myip-url with /32 suffix"
+        required: false
+        type: string
+        default: None
+      vault-wrap-secret-path:
+        description: "Path to where wrap-token will be stored"
+        required: false
+        type: string
+      cache:
+        description: "Cache/ use cached credentials"
+        required: false
+        type: boolean
+        default: false
+      cache-file:
+        description: "Path and name to cache file, defaults to /tmp/{repo_name}_{workflow_name}.cache.json when running in atlantis, or /tmp/{current_workdir}.cache.json when running from shell"
+        required: false
+        type: string
+        default: None
+      secret:
+        description: 'Every key/value pair in vault applications "setenv" secret is added to env vars'
+        required: false
+        type: boolean
+        default: false
+      vault-secret:
+        description: "Get secret from vault, specify path to secret, key in secret and name of environment variable to export. Can be used multiple times, e.g. --vault-secret secret/applications/myapp/prod:mykey:MY_VAR_NAME. If using * as key, all keys in secret will be exported with the specified var_name as prefix, e.g.: --vault-secret secret/applications/myapp/prod:*:MY_PREFIX_ will export MY_PREFIX_key1, MY_PREFIX_key2 etc."
+        required: false
+        type: string
+        default: None
+      myip-url:
+        description: "URL to get current IP address, default is http://icanhazip.com"
+        required: false
+        type: string
+        default: "http://icanhazip.com"
+      terraform_version:
+        description: Version of Terraform to use
+        type: string
+        default: "latest"
+    outputs:
+      setenv_outputs:
+        description: "Outputs from the setenv action"
+        value: ${{ jobs.setenv.outputs.wrap_token }}
+jobs:
+  setenv:
+    name: Set environment variables from Vault
+    runs-on: ${{ fromJson(inputs.runs-on) }}
+    outputs:
+      wrap_token: ${{ toJson(steps.wrap_outputs.outputs.wrap_token) }}
+    steps:
+      - name: Vault login
+        id: vault_login_github
+        uses: hashicorp/vault-action@v3
+        with:
+          url: ${{ inputs.vault-address }}
+          role: ${{ inputs.github-role-name }}-${{ inputs.env }}
+          method: jwt
+          path: jwt-github
+          outputToken: true
+
+      - name: Gather environment variables
+        id: setenv
+        uses: nrkno/github-action-setenv@main
+        env:
+          VAULT_ADDR: ${{ inputs.vault-address }}
+        with:
+          name: ${{ inputs.role-name }}
+          env: ${{ inputs.env }}
+          cluster: ${{ inputs.cluster }}
+          azure: ${{ inputs.azure }}
+          azure_no_arm: ${{ inputs.azure-no-arm }}
+          gcp: ${{ inputs.gcp }}
+          terraform_registry: ${{ inputs.terraform-registry }}
+          no_wait: ${{ inputs.no-wait }}
+          eval: ${{ inputs.eval }}
+          new_line: ${{ inputs.new-line }}
+          debug: ${{ inputs.debug }}
+          vault_role_id_name: ${{ inputs.vault-role-id-name || 'TF_VAR_vault_role_id' }}
+          vault_secret_id_name: ${{ inputs.vault-secret-id-name || 'TF_VAR_vault_secret_id' }}
+          vault_secret_id_cidr: ${{ inputs.vault-secret-id-cidr || 'None' }}
+          cache: ${{ inputs.cache }}
+          cache_file: ${{ inputs.cache-file }}
+          secret: ${{ inputs.secret }}
+          vault_secret: ${{ inputs.vault-secret }}
+          myip_url: ${{ inputs.myip-url }}
+          token: ${{ steps.vault_login_github.outputs.vault_token }}
+
+      - name: Wrap outputs in vault
+        id: wrap_outputs
+        env:
+          github_role_name: ${{ inputs.github-role-name }}
+          env: ${{ inputs.env }}
+        run: |
+          wrap_token=$(curl -s -X POST -H "Content-Type: application/json" \
+              -H "X-Vault-Token: ${{ steps.vault_login_github.outputs.vault_token }}" \
+              -H "X-Vault-Wrap-TTL: 300" \
+              -d '${{ toJson(steps.setenv.outputs) }}' \
+              "${{ inputs.vault-address }}/v1/sys/wrapping/wrap" | jq -r '.wrap_info.token')
+
+          echo "wrap_token=${wrap_token}" >> $GITHUB_OUTPUT
