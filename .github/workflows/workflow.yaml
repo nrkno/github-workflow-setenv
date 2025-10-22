@@ -31,6 +31,21 @@ on:
         required: false
         type: boolean
         default: false
+      azure-tenant-id:
+        description: "Azure tenant ID. Required if --azure is set"
+        required: false
+        type: string
+        default: None
+      azure-subscription-id:
+        description: "Azure subscription ID. Subscription ID for which your state is stored. Required if --azure is set"
+        required: false
+        type: string
+        default: None
+      azure-resource-group:
+        description: "Azure resource group name. Resource group for which your state is stored. Required if --azure is set"
+        required: false
+        type: string
+        default: None
       azure-no-arm:
         description: "Do not export ARM_CLIENT_ID and ARM_CLIENT_SECRET, only TF_VAR_azure_client_id and TF_VAR_azure_client_secret"
         required: false
@@ -145,6 +160,9 @@ jobs:
           env: ${{ inputs.env }}
           cluster: ${{ inputs.cluster }}
           azure: ${{ inputs.azure }}
+          azure_tenant_id: ${{ inputs.azure-tenant-id || '' }}
+          azure_subscription_id: ${{ inputs.azure-subscription-id || '' }}
+          azure_resource_group: ${{ inputs.azure-resource-group || '' }}
           azure_no_arm: ${{ inputs.azure-no-arm }}
           gcp: ${{ inputs.gcp }}
           terraform_registry: ${{ inputs.terraform-registry }}
