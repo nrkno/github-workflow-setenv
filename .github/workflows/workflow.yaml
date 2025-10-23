@@ -35,17 +35,17 @@ on:
         description: "Azure tenant ID. Required if --azure is set"
         required: false
         type: string
-        default: None
+        default: ""
       azure-subscription-id:
         description: "Azure subscription ID. Subscription ID for which your state is stored. Required if --azure is set"
         required: false
         type: string
-        default: None
+        default: ""
       azure-resource-group:
         description: "Azure resource group name. Resource group for which your state is stored. Required if --azure is set"
         required: false
         type: string
-        default: None
+        default: " "
       azure-no-arm:
         description: "Do not export ARM_CLIENT_ID and ARM_CLIENT_SECRET, only TF_VAR_azure_client_id and TF_VAR_azure_client_secret"
         required: false
