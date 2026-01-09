@@ -149,6 +149,9 @@ jobs:
           method: jwt
           path: jwt-github
           outputToken: true
+      
+      - name: setup docker
+        uses: docker/setup-docker-action@v4
 
       - name: Gather environment variables
         id: setenv
