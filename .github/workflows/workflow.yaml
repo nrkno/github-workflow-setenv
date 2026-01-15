@@ -1,3 +1,4 @@
+name: GitHub Workflow - Setenv
 on:
   workflow_call:
     inputs:
@@ -61,11 +62,10 @@ on:
         required: false
         type: boolean
         default: false
-      no-wait:
-        description: "Do not wait for credentials to propagate"
+      wait-time:
+        description: "Time to wait in seconds after Azure credentials have been validated, defaults to 60"
         required: false
-        type: boolean
-        default: false
+        type: string
       eval:
         description: "Output as export statements, for use with eval $()"
         required: false
@@ -133,6 +133,7 @@ on:
       setenv_outputs:
         description: "Outputs from the setenv action"
         value: ${{ jobs.setenv.outputs.wrap_token }}
+
 jobs:
   setenv:
     name: Set environment variables from Vault
@@ -152,7 +153,7 @@ jobs:
 
       - name: Gather environment variables
         id: setenv
-        uses: nrkno/github-action-setenv@main
+        uses: nrkno/github-action-setenv@v3.0.0
         env:
           VAULT_ADDR: ${{ inputs.vault-address }}
         with:
@@ -166,7 +167,7 @@ jobs:
           azure_no_arm: ${{ inputs.azure-no-arm }}
           gcp: ${{ inputs.gcp }}
           terraform_registry: ${{ inputs.terraform-registry }}
-          no_wait: ${{ inputs.no-wait }}
+          wait_time: ${{ inputs.wait-time }}
           eval: ${{ inputs.eval }}
           new_line: ${{ inputs.new-line }}
           debug: ${{ inputs.debug }}
