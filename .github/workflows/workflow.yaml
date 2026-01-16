@@ -153,7 +153,7 @@ jobs:
 
       - name: Gather environment variables
         id: setenv
-        uses: nrkno/github-action-setenv@v3.0.2
+        uses: nrkno/github-action-setenv@v3
         env:
           VAULT_ADDR: ${{ inputs.vault-address }}
         with:
