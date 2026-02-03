@@ -1,2 +1,6 @@
 # github-workflow-setenv
-Set environment.
+
+Set environment for terraform from vault
+
+<!-- autodoc start -->
+<!-- autodoc end -->
