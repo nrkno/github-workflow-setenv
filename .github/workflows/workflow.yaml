@@ -53,12 +53,12 @@ on:
         type: boolean
         default: false
       gcp:
-        description: 'GCP project names, creates TF_VAR_gcp_project_name for use in "credentials" in google provider'
+        description: "GCP project names, creates TF_VAR_gcp_project_name for use in \"credentials\" in google provider"
         required: false
         type: string
         default: None
       terraform-registry:
-        description: 'Get Terraform registry token, expects to be found in vault under "token" in secret/applications/{name}/{env}/terraform-registry'
+        description: "Get Terraform registry token, expects to be found in vault under \"token\" in secret/applications/{name}/{env}/terraform-registry"
         required: false
         type: boolean
         default: false
@@ -82,12 +82,12 @@ on:
         type: boolean
         default: false
       vault-role-id-name:
-        description: 'Name of the environment variable for Vault role ID, defaults to "TF_VAR_vault_role_id"'
+        description: "Name of the environment variable for Vault role ID, defaults to \"TF_VAR_vault_role_id\""
         required: false
         type: string
         default: "TF_VAR_vault_role_id"
       vault-secret-id-name:
-        description: 'Name of the environment variable for Vault secret ID, defaults to "TF_VAR_vault_secret_id"'
+        description: "Name of the environment variable for Vault secret ID, defaults to \"TF_VAR_vault_secret_id\""
         required: false
         type: string
         default: "TF_VAR_vault_secret_id"
@@ -111,7 +111,7 @@ on:
         type: string
         default: None
       secret:
-        description: 'Every key/value pair in vault applications "setenv" secret is added to env vars'
+        description: "Every key/value pair in vault applications \"setenv\" secret is added to env vars"
         required: false
         type: boolean
         default: false
@@ -153,7 +153,7 @@ jobs:
 
       - name: Gather environment variables
         id: setenv
-        uses: nrkno/github-action-setenv@v3
+        uses: nrkno/github-action-setenv@ab64206ad308f089730aa91bc90be30d9f42da47 # v3.1.0
         env:
           VAULT_ADDR: ${{ inputs.vault-address }}
         with:
