@@ -151,7 +151,7 @@ jobs:
     steps:
       - name: Vault login
         id: vault_login_github
-        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
+        uses: hashicorp/vault-action@v4.0.0
         with:
           url: ${{ inputs.vault-address }}
           role: ${{ inputs.github-role-name }}-${{ inputs.env }}
@@ -163,7 +163,7 @@ jobs:
         id: setenv
         # TODO(bump): security/sweep-2026-11 in github-action-setenv (masks values, rejects reserved
         # GITHUB_ENV keys, writes GITHUB_ENV safely) is unreleased. Pin the SHA of the next release.
-        uses: nrkno/github-action-setenv@883dd4c164f4b6376f5bbe10ad19675d04fdc22b # v3.2.1
+        uses: nrkno/github-action-setenv@v3.2.1
         env:
           VAULT_ADDR: ${{ inputs.vault-address }}
         with:
