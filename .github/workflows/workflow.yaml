@@ -46,7 +46,7 @@ on:
         description: "Azure resource group name. Resource group for which your state is stored. Required if --azure is set"
         required: false
         type: string
-        default: " "
+        default: ""
       azure-no-arm:
         description: "Do not export ARM_CLIENT_ID and ARM_CLIENT_SECRET, only TF_VAR_azure_client_id and TF_VAR_azure_client_secret"
         required: false
@@ -95,9 +95,9 @@ on:
         description: "CIDR to use for Vault secret ID, defaults to the IP address from --myip-url with /32 suffix"
         required: false
         type: string
-        default: None
+        default: ""
       vault-wrap-secret-path:
-        description: "Path to where wrap-token will be stored"
+        description: "Deprecated and unused. Kept so existing callers keep working."
         required: false
         type: string
       cache:
@@ -109,7 +109,7 @@ on:
         description: "Path and name to cache file, defaults to /tmp/{repo_name}_{workflow_name}.cache.json when running in atlantis, or /tmp/{current_workdir}.cache.json when running from shell"
         required: false
         type: string
-        default: None
+        default: ""
       secret:
         description: "Every key/value pair in vault applications \"setenv\" secret is added to env vars"
         required: false
@@ -126,9 +126,14 @@ on:
         type: string
         default: "http://icanhazip.com"
       terraform_version:
-        description: Version of Terraform to use
+        description: "Deprecated and unused. Kept so existing callers keep working."
         type: string
         default: "latest"
+      wrap-ttl:
+        description: "Lifetime in seconds of the Vault response-wrapping token that is handed to the caller"
+        required: false
+        type: string
+        default: "300"
     outputs:
       setenv_outputs:
         description: "Outputs from the setenv action"
@@ -138,12 +143,15 @@ jobs:
   setenv:
     name: Set environment variables from Vault
     runs-on: ${{ fromJson(inputs.runs-on) }}
+    permissions:
+      id-token: write
+      contents: read
     outputs:
       wrap_token: ${{ toJson(steps.wrap_outputs.outputs.wrap_token) }}
     steps:
       - name: Vault login
         id: vault_login_github
-        uses: hashicorp/vault-action@v3
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
         with:
           url: ${{ inputs.vault-address }}
           role: ${{ inputs.github-role-name }}-${{ inputs.env }}
@@ -153,6 +161,8 @@ jobs:
 
       - name: Gather environment variables
         id: setenv
+        # TODO(bump): security/sweep-2026-11 in github-action-setenv (masks values, rejects reserved
+        # GITHUB_ENV keys, writes GITHUB_ENV safely) is unreleased. Pin the SHA of the next release.
         uses: nrkno/github-action-setenv@883dd4c164f4b6376f5bbe10ad19675d04fdc22b # v3.2.1
         env:
           VAULT_ADDR: ${{ inputs.vault-address }}
@@ -173,7 +183,7 @@ jobs:
           debug: ${{ inputs.debug }}
           vault_role_id_name: ${{ inputs.vault-role-id-name || 'TF_VAR_vault_role_id' }}
           vault_secret_id_name: ${{ inputs.vault-secret-id-name || 'TF_VAR_vault_secret_id' }}
-          vault_secret_id_cidr: ${{ inputs.vault-secret-id-cidr || 'None' }}
+          vault_secret_id_cidr: ${{ inputs.vault-secret-id-cidr }}
           cache: ${{ inputs.cache }}
           cache_file: ${{ inputs.cache-file }}
           secret: ${{ inputs.secret }}
@@ -184,13 +194,29 @@ jobs:
       - name: Wrap outputs in vault
         id: wrap_outputs
         env:
-          github_role_name: ${{ inputs.github-role-name }}
-          env: ${{ inputs.env }}
+          VAULT_ADDR: ${{ inputs.vault-address }}
+          VAULT_TOKEN: ${{ steps.vault_login_github.outputs.vault_token }}
+          WRAP_TTL: ${{ inputs.wrap-ttl }}
+          SETENV_OUTPUTS: ${{ toJson(steps.setenv.outputs) }}
+        shell: bash
         run: |
-          wrap_token=$(curl -s -X POST -H "Content-Type: application/json" \
-              -H "X-Vault-Token: ${{ steps.vault_login_github.outputs.vault_token }}" \
-              -H "X-Vault-Wrap-TTL: 300" \
-              -d '${{ toJson(steps.setenv.outputs) }}' \
-              "${{ inputs.vault-address }}/v1/sys/wrapping/wrap" | jq -r '.wrap_info.token')
+          set -euo pipefail
+          case "${WRAP_TTL}" in ''|*[!0-9]*) echo "::error::wrap-ttl must be a number of seconds" >&2; exit 1 ;; esac
 
-          echo "wrap_token=${wrap_token}" >> $GITHUB_OUTPUT
+          # Secrets never appear in the script text or in process arguments:
+          # payload goes through stdin, the token through a private header file.
+          umask 077
+          header_file="$(mktemp)"
+          trap 'rm -f "${header_file}"' EXIT
+          printf 'X-Vault-Token: %s\n' "${VAULT_TOKEN}" > "${header_file}"
+
+          response="$(printf '%s' "${SETENV_OUTPUTS}" | curl --silent --show-error --fail-with-body \
+              --request POST \
+              --header "Content-Type: application/json" \
+              --header "@${header_file}" \
+              --header "X-Vault-Wrap-TTL: ${WRAP_TTL}" \
+              --data-binary @- \
+              "${VAULT_ADDR}/v1/sys/wrapping/wrap")"
+
+          wrap_token="$(printf '%s' "${response}" | jq -er '.wrap_info.token')"
+          echo "wrap_token=${wrap_token}" >> "${GITHUB_OUTPUT}"
