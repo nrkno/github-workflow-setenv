@@ -230,7 +230,8 @@ jobs:
           fi
           if [ "${http_code}" != "200" ]; then
             # Vault error bodies hold only {"errors":[...]}; print just that array and never the response otherwise.
-            causes="$(jq -r '(.errors // []) | map(tostring) | join("; ")' "${response_file}" 2>/dev/null || true)"
+            # CR and LF are replaced so the text cannot start a new workflow command.
+            causes="$(jq -r '(.errors // []) | map(tostring) | join("; ") | gsub("[\r\n]"; " ")' "${response_file}" 2>/dev/null || true)"
             echo "::error::Vault wrap request returned HTTP ${http_code}: ${causes:-no error detail}" >&2
             exit 1
           fi
