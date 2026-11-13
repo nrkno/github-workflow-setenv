@@ -121,10 +121,10 @@ on:
         type: string
         default: None
       myip-url:
-        description: "URL to get current IP address, default is http://icanhazip.com"
+        description: "URL to get current IP address, default is https://icanhazip.com"
         required: false
         type: string
-        default: "http://icanhazip.com"
+        default: "https://icanhazip.com"
       terraform_version:
         description: "Deprecated and unused. Kept so existing callers keep working."
         type: string
@@ -204,19 +204,39 @@ jobs:
           case "${WRAP_TTL}" in ''|*[!0-9]*) echo "::error::wrap-ttl must be a number of seconds" >&2; exit 1 ;; esac
 
           # Secrets never appear in the script text or in process arguments:
-          # payload goes through stdin, the token through a private header file.
+          # the payload goes through stdin, the token through a private header file.
+          # Temp files live in the runner's per-job temp dir and are removed on exit.
           umask 077
-          header_file="$(mktemp)"
-          trap 'rm -f "${header_file}"' EXIT
+          work_dir="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/wrap.XXXXXX")"
+          trap 'rm -rf "${work_dir}"' EXIT
+          header_file="${work_dir}/headers"
+          response_file="${work_dir}/response"
           printf 'X-Vault-Token: %s\n' "${VAULT_TOKEN}" > "${header_file}"
 
-          response="$(printf '%s' "${SETENV_OUTPUTS}" | curl --silent --show-error --fail-with-body \
+          # No --fail-with-body (needs curl >= 7.76): write the body to a file and check the status.
+          # curl's own error text never contains the payload or the token.
+          curl_rc=0
+          http_code="$(printf '%s' "${SETENV_OUTPUTS}" | curl --silent --show-error \
+              --output "${response_file}" --write-out '%{http_code}' \
               --request POST \
               --header "Content-Type: application/json" \
               --header "@${header_file}" \
               --header "X-Vault-Wrap-TTL: ${WRAP_TTL}" \
               --data-binary @- \
-              "${VAULT_ADDR}/v1/sys/wrapping/wrap")"
+              "${VAULT_ADDR}/v1/sys/wrapping/wrap")" || curl_rc=$?
+          if [ "${curl_rc}" -ne 0 ]; then
+            echo "::error::Vault wrap request failed (curl exit ${curl_rc})" >&2
+            exit 1
+          fi
+          if [ "${http_code}" != "200" ]; then
+            # Vault error bodies hold only {"errors":[...]}; print just that array and never the response otherwise.
+            causes="$(jq -r '(.errors // []) | map(tostring) | join("; ")' "${response_file}" 2>/dev/null || true)"
+            echo "::error::Vault wrap request returned HTTP ${http_code}: ${causes:-no error detail}" >&2
+            exit 1
+          fi
 
-          wrap_token="$(printf '%s' "${response}" | jq -er '.wrap_info.token')"
+          wrap_token="$(jq -er '.wrap_info.token' "${response_file}")" || {
+            echo "::error::Vault response had no wrap_info.token" >&2
+            exit 1
+          }
           echo "wrap_token=${wrap_token}" >> "${GITHUB_OUTPUT}"
