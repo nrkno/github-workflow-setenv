@@ -1,11 +1,13 @@
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions: {}
 
 jobs:
   autodoc:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     permissions:
       contents: write
     name: Auto-generated workflow documentation
