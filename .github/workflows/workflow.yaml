@@ -3,7 +3,7 @@ on:
   workflow_call:
     inputs:
       runs-on:
-        description: "Runs on, e.g. ubuntu-latest"
+        description: 'JSON runner label or list of labels, e.g. "ubuntu-latest" or ["self-hosted","linux"]'
         required: true
         type: string
       github-role-name:
@@ -67,7 +67,7 @@ on:
         required: false
         type: string
       eval:
-        description: "Output as export statements, for use with eval $()"
+        description: "Export the variables as step outputs so they can be included in the Vault wrap"
         required: false
         type: boolean
         default: false
@@ -136,7 +136,7 @@ on:
         default: "300"
     outputs:
       setenv_outputs:
-        description: "Outputs from the setenv action"
+        description: "JSON-encoded Vault wrapping token (a short-lived bearer credential)"
         value: ${{ jobs.setenv.outputs.wrap_token }}
 
 jobs:
@@ -145,7 +145,6 @@ jobs:
     runs-on: ${{ fromJson(inputs.runs-on) }}
     permissions:
       id-token: write
-      contents: read
     outputs:
       wrap_token: ${{ toJson(steps.wrap_outputs.outputs.wrap_token) }}
     steps:
@@ -161,8 +160,8 @@ jobs:
 
       - name: Gather environment variables
         id: setenv
-        # TODO(bump): security/sweep-2026-11 in github-action-setenv (masks values, rejects reserved
-        # GITHUB_ENV keys, writes GITHUB_ENV safely) is unreleased. Pin the SHA of the next release.
+        # Release blocker: replace v3.2.1 with the hardened action after it is published,
+        # then regenerate actions.lock and verify the new locked SHA before promoting this workflow.
         uses: nrkno/github-action-setenv@v3.2.1
         env:
           VAULT_ADDR: ${{ inputs.vault-address }}
@@ -229,15 +228,17 @@ jobs:
             exit 1
           fi
           if [ "${http_code}" != "200" ]; then
-            # Vault error bodies hold only {"errors":[...]}; print just that array and never the response otherwise.
-            # CR and LF are replaced so the text cannot start a new workflow command.
-            causes="$(jq -r '(.errors // []) | map(tostring) | join("; ") | gsub("[\r\n]"; " ")' "${response_file}" 2>/dev/null || true)"
-            echo "::error::Vault wrap request returned HTTP ${http_code}: ${causes:-no error detail}" >&2
+            # Report only the errors array of a single JSON response, not the whole body.
+            # Make the detail single-line and escape percent signs for the runner's command decoder.
+            causes="$(jq -rs 'select(length == 1) | (.[0].errors // []) | map(tostring) | join("; ") | gsub("[\r\n\u0000]"; " ")' "${response_file}" 2>/dev/null || true)"
+            causes="${causes//%/%25}"
+            printf '::error::Vault wrap request returned HTTP %s: %s\n' "${http_code}" "${causes:-no error detail}" >&2
             exit 1
           fi
 
-          wrap_token="$(jq -er '.wrap_info.token' "${response_file}")" || {
-            echo "::error::Vault response had no wrap_info.token" >&2
+          wrap_token="$(jq -ers 'select(length == 1) | .[0].wrap_info.token | strings | select(length > 0 and (test("[\r\n\u0000]") | not))' "${response_file}")" || {
+            echo "::error::Vault response had no valid wrap_info.token" >&2
             exit 1
           }
-          echo "wrap_token=${wrap_token}" >> "${GITHUB_OUTPUT}"
+          # Masking a value here can cause the runner to drop it from the job outputs.
+          printf 'wrap_token=%s\n' "${wrap_token}" >> "${GITHUB_OUTPUT}"

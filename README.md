@@ -1,9 +1,51 @@
 # github-workflow-setenv
 
-Set environment for terraform from vault
+Collects Terraform environment values from Vault and returns a short-lived Vault
+wrapping token to the caller. The values themselves do not cross jobs as
+workflow outputs.
 
 <!-- autodoc start -->
 <!-- autodoc end -->
+
+## Caller requirements
+
+- Grant the calling job `id-token: write`. This workflow does not check out
+  source or need `contents: read` in the `setenv` job. The locked Vault action
+  uses GitHub OIDC for `method: jwt`; other jobs in the caller may still need
+  their own repository permissions.
+- Pass `runs-on` as a JSON string or array inside the workflow input string,
+  for example `runs-on: '"ubuntu-latest"'` or
+  `runs-on: '["self-hosted","linux"]'`. Use a Linux runner with Docker, support
+  for Node 24 actions, and `bash`, `curl` and `jq` on the host. The runner must
+  reach Vault and the required container registry and credential endpoints.
+- Set `eval: true` to include gathered variables in the wrapped payload. Pass
+  a nonempty `role-name`. For the hardened setenv action, `azure: true` also
+  requires nonblank `azure-tenant-id`, `azure-subscription-id`, and
+  `azure-resource-group`. Review any custom Vault export names against the
+  [setenv action's name rules](https://github.com/nrkno/github-action-setenv#security-notes).
+- `setenv_outputs` is a **JSON-encoded wrapping token**, not the values or a
+  shell expression. Treat the token as a bearer credential. Pass it through
+  `env:`, decode the JSON string, and unwrap it once against the same Vault
+  before it expires (`wrap-ttl` defaults to 300 seconds). Do not interpolate
+  it into `run:`, print it, or upload it as an artifact. The producer does not
+  register a mask for the wrapping token: the GitHub runner can drop masked
+  job outputs before delivery. Keep the handoff within trusted jobs.
+
+## Verification and release order
+
+`python3 -I -B -m unittest discover -s tests -v` runs the workflow's wrap step
+against a local fake Vault with real Bash, curl, and jq. It checks request
+bytes, token output, error reporting and temporary-file cleanup. It does not
+run a GitHub job or prove the OIDC policy, log masking, or cross-job transfer.
+
+**Release blocker:** This branch still locks `github-action-setenv` to
+`v3.2.1`. The hardened action is not published. Release that action first,
+update the workflow's action version, regenerate `actions.lock`, and review
+the new resolved SHA before promoting this workflow. Then verify the exact
+pins with a trusted test caller on the intended self-hosted runner. Check
+container startup, Vault OIDC with only `id-token: write`, runner masking of
+synthetic values, cross-job delivery, and unwrap without leaking the token
+or credentials. A local passing test cannot replace that run.
 
 ## Lockfile upkeep
 
