@@ -1,14 +1,17 @@
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   autodoc:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    permissions:
+      contents: write
     name: Auto-generated workflow documentation
-    uses: nrkno/github-workflow-action-workflow-autodoc/.github/workflows/workflow.yaml@v1.1.4 # v1.1.4
+    uses: nrkno/github-workflow-action-workflow-autodoc/.github/workflows/workflow.yaml@84a54022b61e892fcc09d945795771d2d3822ad7 # v1.1.4
     with:
       runs-on: "\"ubuntu-latest\""
       workflow_file: .github/workflows/workflow.yaml

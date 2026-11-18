@@ -3,13 +3,13 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-  pull-requests: read
+permissions: {}
 
 jobs:
   release:
+    permissions:
+      contents: write
+      pull-requests: read
     uses: nrkno/github-workflow-semantic-release/.github/workflows/workflow.yaml@6a8585e39eabcb53cdbdebfcc76eb9672199089e # v5.1.5
-    secrets: inherit
     with:
-      runs-on: ubuntu-22.04
+      runs-on: ubuntu-24.04
