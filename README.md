@@ -24,32 +24,21 @@ workflow outputs.
   `azure-resource-group`. Review any custom Vault export names against the
   [setenv action's name rules](https://github.com/nrkno/github-action-setenv#security-notes).
 
-## Migrate callers to pass the wrapping token as data
+## Wrapping-token handoff
 
 `setenv_outputs` is a **JSON-encoded wrapping token**, not the gathered values
-or a shell expression. Treat it as a short-lived bearer credential. If a
-caller puts the output expression directly in `run:`, move it to the consuming
-step's `env:` mapping instead. For example, if the calling job ID is `setenv`:
+or a shell expression. Decode it as JSON, require a nonempty string, and
+stop without an unwrap request if the output is missing or invalid. Unwrap
+it once against the same Vault before it expires (`wrap-ttl` defaults to
+300 seconds). Keep the handoff within trusted jobs. Do not evaluate the
+token as shell code, pass it as a process argument, or put it in artifacts.
 
-```yaml
-env:
-  SETENV_WRAP_TOKEN: ${{ needs.setenv.outputs.setenv_outputs }}
-```
-
-Read the quoted `"$SETENV_WRAP_TOKEN"` variable as data. Decode it as JSON,
-require a nonempty string, and stop without an unwrap request if the output
-is missing or invalid. Unwrap it once against the same Vault before it
-expires (`wrap-ttl` defaults to 300 seconds). Keep the handoff within trusted
-jobs. Do not use `eval`, pass the token as a process argument, print it, or
-put it in artifacts.
-
-Moving the expression out of `run:` prevents it from becoming script text;
-it does not hide the token from logs. The producer does not register a mask
-for the wrapping token because the runner can drop masked job outputs. The
-runner can also print the consuming step's environment before its script
-starts, so masking on the first line is not enough. Verify with a synthetic
-token on the target runner that the handoff stays out of logs, including the
-step header. Do not promote a caller that cannot keep it private.
+Moving an output expression from `run:` to a step's `env:` mapping separates
+code from data only. **It is not a private transport.** The runner can print
+the step environment before the script starts, so masking in the script
+does not protect the step header. The producer does not register a mask
+because the runner can drop masked job outputs. The token must stay out of
+logs even with a short lifetime.
 
 ## Verification and release order
 
@@ -66,6 +55,12 @@ pins with a trusted test caller on the intended self-hosted runner. Check
 container startup, Vault OIDC with only `id-token: write`, runner masking of
 synthetic values, cross-job delivery, and unwrap without leaking the token
 or credentials. A local passing test cannot replace that run.
+
+**Token confidentiality blocker:** Promotion remains blocked until an
+authorized check with a synthetic token on the intended self-hosted runner
+proves the intended transport keeps the token out of log surfaces,
+including step headers, or an owner approves a revised design. This
+guidance does not approve token logging or a change to the handoff.
 
 ## Lockfile upkeep
 
