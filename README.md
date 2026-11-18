@@ -23,13 +23,33 @@ workflow outputs.
   requires nonblank `azure-tenant-id`, `azure-subscription-id`, and
   `azure-resource-group`. Review any custom Vault export names against the
   [setenv action's name rules](https://github.com/nrkno/github-action-setenv#security-notes).
-- `setenv_outputs` is a **JSON-encoded wrapping token**, not the values or a
-  shell expression. Treat the token as a bearer credential. Pass it through
-  `env:`, decode the JSON string, and unwrap it once against the same Vault
-  before it expires (`wrap-ttl` defaults to 300 seconds). Do not interpolate
-  it into `run:`, print it, or upload it as an artifact. The producer does not
-  register a mask for the wrapping token: the GitHub runner can drop masked
-  job outputs before delivery. Keep the handoff within trusted jobs.
+
+## Migrate callers to pass the wrapping token as data
+
+`setenv_outputs` is a **JSON-encoded wrapping token**, not the gathered values
+or a shell expression. Treat it as a short-lived bearer credential. If a
+caller puts the output expression directly in `run:`, move it to the consuming
+step's `env:` mapping instead. For example, if the calling job ID is `setenv`:
+
+```yaml
+env:
+  SETENV_WRAP_TOKEN: ${{ needs.setenv.outputs.setenv_outputs }}
+```
+
+Read the quoted `"$SETENV_WRAP_TOKEN"` variable as data. Decode it as JSON,
+require a nonempty string, and stop without an unwrap request if the output
+is missing or invalid. Unwrap it once against the same Vault before it
+expires (`wrap-ttl` defaults to 300 seconds). Keep the handoff within trusted
+jobs. Do not use `eval`, pass the token as a process argument, print it, or
+put it in artifacts.
+
+Moving the expression out of `run:` prevents it from becoming script text;
+it does not hide the token from logs. The producer does not register a mask
+for the wrapping token because the runner can drop masked job outputs. The
+runner can also print the consuming step's environment before its script
+starts, so masking on the first line is not enough. Verify with a synthetic
+token on the target runner that the handoff stays out of logs, including the
+step header. Do not promote a caller that cannot keep it private.
 
 ## Verification and release order
 
